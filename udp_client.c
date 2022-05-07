@@ -142,6 +142,7 @@ uint16_t update_crc_16( uint16_t crc, unsigned char c )
 int Usage(const char* proc)
 {
     printf("Usage:%s[server_ip][server_prot]\n", proc);
+    return 0;
 }
 
 void *recv_phy_log(void *arg)
@@ -149,7 +150,7 @@ void *recv_phy_log(void *arg)
     int ret;
     thread_send_info_t *ts_info = (thread_send_info_t *)arg;
     char ver_info[MAXDATASIZE] = {0};
-    int i;
+    //int i;
     uint32_t head, id, seq, size, data;
 
     while(1)
@@ -251,7 +252,7 @@ int main(int argc, char* argv[])
     int sockfd;
     struct sockaddr_in addr;
 
-    int err;
+    //int err;
     char sendbuf[MAXDATASIZE] = {0};
     
     int msgid = 0;
@@ -284,7 +285,8 @@ int main(int argc, char* argv[])
 
     while(1)
     {
-        printf("input usage: \n\tquit[100] \n\tphy_log_start[101] \n\texit[200] \ninput message: ");
+        //printf("input usage: \n\tquit[100] \n\tphy_log_start[101] \n\texit[200] \ninput message: ");
+        printf("\ninput message: ");
         fgets(sendbuf, 40, stdin);
         sendbuf[strlen(sendbuf)-1] = '\0';
 

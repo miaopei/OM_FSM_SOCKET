@@ -4,9 +4,7 @@
 #include <strings.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/epoll.h>
 #include <sys/resource.h>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -20,14 +18,14 @@ int setnonblocking(int fd)
     int flags;
     if((flags = fcntl(fd, F_GETFD, 0)) < 0)
     {
-        printf("get falg error\n");
+        printf("Error: get falg error.\n");
         return -1;
     }
 
     flags |= O_NONBLOCK;
     if (fcntl(fd, F_SETFL, flags) < 0)
     {
-        printf("set nonblock fail\n");
+        printf("Error: set nonblock fail.\n");
         return -1;
     }
     return 0;
@@ -46,19 +44,19 @@ int create_udp_listen(short port)
     sockFd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockFd < 0)
     {
-        perror("socket error");
+        printf("Error: socket error.\n");
         return -1;
     }
 
     if (setnonblocking(sockFd) < 0)
     {
-        perror("setnonblock error");
+        printf("Error: setnonblock error.\n");
     }
 
     ret = bind(sockFd, (struct sockaddr*)&seraddr, sizeof(struct sockaddr));
     if (ret < 0)
     {
-        perror("bind");
+        printf("Error: bind failed.\n");
         return -1;
     }
 
@@ -68,12 +66,11 @@ int create_udp_listen(short port)
 om_socket_t *om_init(unsigned port)
 {
     om_socket_t *oms = NULL;
-    int ret = 0;
 
     oms = calloc(1, sizeof(om_socket_t));
     if (NULL == oms)
     {
-        printf("calloc fail.\n");
+        printf("Error: calloc fail.\n");
         goto Error0;
     }
 
@@ -84,7 +81,7 @@ om_socket_t *om_init(unsigned port)
     oms->bufLock = 0;
     if (oms->listen < 0)
     {
-        printf("listen and bind.\n");
+        printf("Error: listen and bind.\n");
         goto Error1;
     }
 
@@ -132,8 +129,8 @@ fsm_t* fsm_init(void)
     fsm->alive 		= 0;
     fsm->numMsg 	= 0;
     fsm->msgIdx 	= 0;
-    fsm->numSeg 	= 0;
-    fsm->segIdx 	= 0;
+    fsm->numSeg   = 0;
+    fsm->segIdx   = 0;
     memset(fsm->rspMsgBuf, 0x00, sizeof(fsm->rspMsgBuf));
 
     return fsm;
@@ -145,6 +142,14 @@ uint32_t cur_time_ms(void)
     gettimeofday(&tv, NULL);
 
     return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+uint32_t cur_time_us(void)
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  
+  return (tv.tv_sec * 1000000 + tv.tv_usec);
 }
 
 const char *fsm_state_to_string(State s)
@@ -186,6 +191,7 @@ void print_req_msg(fsm_t *fsm)
                , fsm->req.numSlot
                , fsm->req.cellId);
     }
+    
     return ;
 }
 
@@ -236,7 +242,7 @@ uint32_t req_msg_parse(fsm_t *fsm, const char *msg)
 
         print_req_msg(fsm);
     }
-    else if(type = 3000)
+    else if(type == 3000)
     {
         fsm->state = SYNC;
 
@@ -262,7 +268,7 @@ uint32_t req_msg_handler(om_socket_t* oms, fsm_t *fsm)
     len = recvfrom(oms->listen, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*)&cliaddr, &clilen);
     if (len > 0)
     {
-        printf(">>client address = %s:%d\n", inet_ntoa(cliaddr.sin_addr), ntohs(cliaddr.sin_port));
+        printf("\n>>client address = %s:%d\n", inet_ntoa(cliaddr.sin_addr), ntohs(cliaddr.sin_port));
         printf(">>Recv msg len %d.\n", len);
 
         oms->cliAddr = cliaddr;
@@ -285,12 +291,12 @@ uint32_t pack_cell_cfg_rsp_head(fsm_t *fsm
     memset(fsm->rspMsgBuf, 0x00, sizeof(fsm->rspMsgBuf));
     CellCfg_rsp_t CellCfg_rsp;
     CellCfg_rsp.type        = 2000;
-    CellCfg_rsp.msglen      = 32 + dataLen;
+    CellCfg_rsp.msgLen      = 32 + dataLen;
     CellCfg_rsp.lastMsg     = last;
     CellCfg_rsp.rsv0        = 0;
     CellCfg_rsp.rsv1        = 0;
-    CellCfg_rsp.numSeg      = fsm->numMsg;
-    CellCfg_rsp.segIdx      = fsm->msgIdx;
+    CellCfg_rsp.numSeg      = fsm->numSeg;
+    CellCfg_rsp.segIdx      = fsm->segIdx;
     CellCfg_rsp.numCell     = numCell;
     CellCfg_rsp.numTxAnt    = numTxAnt;
     CellCfg_rsp.numRxAnt    = numRxAnt;
@@ -306,12 +312,12 @@ uint32_t pack_rt_rsp_head(fsm_t *fsm
     memset(fsm->rspMsgBuf, 0x00, sizeof(fsm->rspMsgBuf));
     RT_rsp_t rt;
     rt.type         = 2001;
-    rt.msglen       = 32 + dataLen;
+    rt.msgLen       = 32 + dataLen;
     rt.lastMsg      = last;
     rt.rsv0         = 0;
     rt.rsv1         = 0;
-    rt.numSeg       = fsm->numMsg;
-    rt.segIdx       = fsm->msgIdx;
+    rt.numSeg       = fsm->numSeg;
+    rt.segIdx       = fsm->segIdx;
     memcpy(fsm->rspMsgBuf, &rt, sizeof(rt));
 
     return 0;
@@ -331,8 +337,8 @@ uint32_t pack_iq_rsp_head(fsm_t *fsm
     iq.lastMsg      = last;
     iq.rsv0         = 0;
     iq.rsv1         = 0;
-    iq.numSeg       = fsm->numMsg;
-    iq.segIdx       = fsm->msgIdx;
+    iq.numSeg       = fsm->numSeg;
+    iq.segIdx       = fsm->segIdx;
     iq.cellId       = cellId;
     iq.antId        = antId;
     iq.iqType       = iqType;
@@ -350,6 +356,10 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
+            
+            /* data buf 计算获得下边数据 */
+            fsm->numSeg = 1;
+            fsm->segIdx = 0;
 
             pack_cell_cfg_rsp_head(fsm, 0, 1, 2, 4, 8);
 
@@ -361,6 +371,10 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
+            
+            /* data buf 计算获得下边数据 */
+            fsm->numSeg = 1;
+            fsm->segIdx = 0;
 
             pack_rt_rsp_head(fsm, 0, 1);
 
@@ -372,6 +386,10 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
+            
+            /* data buf 计算获得下边数据 */
+            fsm->numSeg = 1;
+            fsm->segIdx = 0;
 
             pack_iq_rsp_head(fsm, 0, 1, 1, 0, 1);
 
@@ -394,31 +412,44 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
             }
             else
             {
-                //printf();
-                //fsm->numMsg = ;
-                //fsm->msgIdx = 0;
+                /* data buf msgs 个数 第一次取第一个数据计算获得下边数据 */
+                //fsm->numSeg = ;
+                fsm->segIdx = 0;
 
                 fsm->state = BUSY;
             }
         }
         else 
         {
-            fsm->msgIdx = fsm->sync.segIdx;
+            fsm->segIdx = fsm->sync.segIdx;
             fsm->state = BUSY;
         }
     }
     else if(fsm->state == BUSY)
     {
-
+        if(fsm->segIdx == fsm->numSeg || (fsm->segIdx % fsm->req.segBat) == 0)
+        {
+            fsm->state = PENDING;
+            fsm->alive = 20000; // 10s
+        }
     }
     else if(fsm->state == PENDING)
     {
-
+        fsm->alive -= 1;
+        if(fsm->alive <= 0)
+        {
+            printf("INT: overtime, FSM idle.\n");
+            fsm->state = IDLE; // cli link down, kill
+        }
     }
 
     if(fsm->state == BUSY)
     {
-
+        /* rsp msg pack */
+    }
+    else
+    {
+      return -1;
     }
 
     return 0;
@@ -440,8 +471,8 @@ again:
                  (struct sockaddr*)&oms->cliAddr, sizeof(struct sockaddr_in));
     if(len > 0)
     {
+        fsm->segIdx += 1;
         printf("INT: send msg success, size %d.\n", len);
-        //fsm->msgIdx += 1;
     }
     else if(len == -1)
     {
@@ -465,14 +496,15 @@ int main(int argc, char *argv[])
     om_socket_t *oms;
     fsm_t *fsm;
     uint32_t t1, t2;
-
+#if 0
     if (argc < 2)
     {
         printf("Usage: %s [port]\n", argv[0]);
         return -1;
     }
-
-    oms = om_init(atoi(argv[1]));
+#endif
+    //oms = om_init(atoi(argv[1]));
+    oms = om_init(5600);
     if (NULL == oms)
     {
         printf("epoll_server_init failed.\n");
@@ -486,17 +518,17 @@ int main(int argc, char *argv[])
         return -3;
     }
 
-    t1 = cur_time_ms();
+    t1 = cur_time_us();
     while(1)
     {
-        t2 = cur_time_ms();
+        t2 = cur_time_us();
         /* tx */
         if((t2 - t1) > 500)
         {
             t1 = t2;
             if(fsm->state != IDLE)
             {
-                rsp_msg_handler(oms, fsm);
+                //rsp_msg_handler(oms, fsm);
             }
         }
 

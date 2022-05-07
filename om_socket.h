@@ -1,6 +1,22 @@
 
+#include <unistd.h>
+#include <stdint.h>
+#include <arpa/inet.h>
+
 #define MSGBUF  10240
 #define RCVBUF	1200+128
+
+/*
+
+https://github.com/AstarLight/FSM-framework/blob/master/main.c
+
+https://github.com/leijian001/sm/blob/master/sm.h#L103:9
+
+https://github.com/ChengOS1/c_FSM/blob/master/FSM.c
+
+https://blog.csdn.net/jenie/article/details/106484709
+
+*/
 
 typedef struct om_socket_s {
     uint32_t 			listen;
@@ -98,6 +114,8 @@ typedef struct fsm_s {
     uint32_t    alive;
     uint32_t    numMsg;
     uint32_t    msgIdx;
+    uint32_t    numSeg;
+    uint32_t    segIdx;
     char        rspMsgBuf[MSGBUF];
 } fsm_t;
 
