@@ -93,24 +93,6 @@ Error0:
     return NULL;
 }
 
-void om_fsm_start(om_socket_t* oms)
-{
-    char recvbuf[RCVBUF] = { 0 };
-    int len;
-    struct sockaddr_in cliaddr;
-    socklen_t clilen = sizeof(struct sockaddr);
-
-    len = recvfrom(oms->listen, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*)&cliaddr, &clilen);
-    if (len > 0)
-    {
-        //oms->udp_handle(oms->listen, &clientaddr, recvbuf, len);
-        printf(">>client address = %s:%d\n", inet_ntoa(cliaddr.sin_addr), ntohs(cliaddr.sin_port));
-        printf("Recv: %s\n", recvbuf);
-
-        sendto(oms->listen, recvbuf, strlen(recvbuf), 0, (struct sockaddr*)&cliaddr, sizeof(struct sockaddr_in));
-    }
-}
-
 void om_server_delete(om_socket_t* oms, fsm_t *fsm)
 {
     if(NULL == oms && NULL == fsm) return;
@@ -125,10 +107,10 @@ fsm_t* fsm_init(void)
     fsm_t *fsm = (fsm_t *)malloc(sizeof(fsm_t));
     if(NULL == fsm) return NULL;
 
-    fsm->state 		= IDLE;
-    fsm->alive 		= 0;
-    fsm->numMsg 	= 0;
-    fsm->msgIdx 	= 0;
+    fsm->state          = IDLE;
+    fsm->alive          = 0;
+    fsm->numMsg         = 0;
+    fsm->msgIdx         = 0;
     fsm->numSeg   = 0;
     fsm->segIdx   = 0;
     memset(fsm->rspMsgBuf, 0x00, sizeof(fsm->rspMsgBuf));
@@ -146,10 +128,10 @@ uint32_t cur_time_ms(void)
 
 uint32_t cur_time_us(void)
 {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  
-  return (tv.tv_sec * 1000000 + tv.tv_usec);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    return (tv.tv_sec * 1000000 + tv.tv_usec);
 }
 
 const char *fsm_state_to_string(State s)
@@ -191,7 +173,7 @@ void print_req_msg(fsm_t *fsm)
                , fsm->req.numSlot
                , fsm->req.cellId);
     }
-    
+
     return ;
 }
 
@@ -347,55 +329,137 @@ uint32_t pack_iq_rsp_head(fsm_t *fsm
     return 0;
 }
 
+uint32_t get_data_slice_num(uint32_t dataLen, uint32_t sliceLen)
+{
+    uint32_t sliceNum = 0;
+
+    sliceNum = dataLen / sliceLen;
+    if(dataLen % sliceLen) sliceNum++;
+
+    return sliceNum;
+}
+
+void print_rsp_msg_buf(fsm_t *fsm)
+{
+    uint16_t type;
+    uint32_t data;
+    memcpy(&type, fsm->rspMsgBuf, 2);
+    printf("\n");
+    switch(type)
+    {
+    case 2000:
+        {
+            CellCfg_rsp_t cellCfg_rsp;
+            memcpy(&cellCfg_rsp, fsm->rspMsgBuf, sizeof(cellCfg_rsp));
+            printf("RspMsgBuf: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d numCell=%d numTxAnt=%d numRxAnt=%d}.\n"
+                   , cellCfg_rsp.type
+                   , cellCfg_rsp.msgLen
+                   , cellCfg_rsp.lastMsg
+                   , cellCfg_rsp.numSeg
+                   , cellCfg_rsp.segIdx
+                   , cellCfg_rsp.numCell
+                   , cellCfg_rsp.numTxAnt
+                   , cellCfg_rsp.numRxAnt);
+            break;
+        }
+    case 2001:
+        {
+            RT_rsp_t rt_rsp;
+            memcpy(&rt_rsp, fsm->rspMsgBuf, sizeof(rt_rsp));
+            printf("RspMsgBuf: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d}.\n"
+                   , rt_rsp.type
+                   , rt_rsp.msgLen
+                   , rt_rsp.lastMsg
+                   , rt_rsp.numSeg
+                   , rt_rsp.segIdx);
+
+            memcpy(&data, fsm->rspMsgBuf + 32, rt_rsp.msgLen - 32);
+            printf("RspMsgBuf data: %d.\n", data);
+            break;
+        }
+    case 2002:
+        {
+            IQ_rsp_t iq_rsp;
+            memcpy(&iq_rsp, fsm->rspMsgBuf, sizeof(iq_rsp));
+            printf("RspMsgBuf: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d cellId=%d antId=%d iqType=%d}.\n"
+                   , iq_rsp.type
+                   , iq_rsp.msgLen
+                   , iq_rsp.lastMsg
+                   , iq_rsp.numSeg
+                   , iq_rsp.segIdx
+                   , iq_rsp.cellId
+                   , iq_rsp.antId
+                   , iq_rsp.iqType);
+
+            memcpy(&data, fsm->rspMsgBuf + 32, iq_rsp.msgLen - 32);
+            printf("RspMsgBuf data: %d.\n", data);	
+            break;
+        }
+    }
+}
+
 uint32_t pack_rsp_msg(fsm_t *fsm)
 {
     if(fsm->state == INIT)
     {
+        memset(fsm->rspMsgBuf, 0x00, sizeof(fsm->rspMsgBuf));
         if(fsm->req.type == 1000)
         {
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
-            
-            /* data buf 计算获得下边数据 */
+
             fsm->numSeg = 1;
             fsm->segIdx = 0;
 
+            /* get numCell numTxAnt numRxAnt fill pack_cell_cfg_rsp_head */
             pack_cell_cfg_rsp_head(fsm, 0, 1, 2, 4, 8);
-
-            /* body data pack */
-
         }
         else if(fsm->req.type == 1001)
         {
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
-            
+
             /* data buf 计算获得下边数据 */
-            fsm->numSeg = 1;
+            uint32_t data = 666;
+            uint32_t dataLen = sizeof(data);
+            fsm->numSeg = get_data_slice_num(dataLen, fsm->req.segLen);
             fsm->segIdx = 0;
 
-            pack_rt_rsp_head(fsm, 0, 1);
+            uint8_t last;
+            if(fsm->msgIdx == (fsm->numMsg - 1)) last = 1;
+            else last = 0;
 
-            /* body data pack */
+            //pack_rt_rsp_head(fsm, fsm->reg.segLen, last);
+            pack_rt_rsp_head(fsm, dataLen, last);
 
+            //uint32_t offs = fsm->segIdx * fsm->reg.segLen;
+            //memcpy(fsm->rspMsgBuf+32, &data + offs, fsm->reg.segLen);
+            memcpy(fsm->rspMsgBuf+32, &data, fsm->req.segLen);
         }
         else if(fsm->req.type == 1002)
         {
             /* data process */
             fsm->numMsg = 1;
             fsm->msgIdx = 0;
-            
+
             /* data buf 计算获得下边数据 */
-            fsm->numSeg = 1;
+            uint32_t iq_data = 888;
+            uint32_t iqLen = sizeof(iq_data);
+            fsm->numSeg = get_data_slice_num(iqLen, fsm->req.segLen);
             fsm->segIdx = 0;
 
-            pack_iq_rsp_head(fsm, 0, 1, 1, 0, 1);
+            uint8_t last;
+            if(fsm->msgIdx == (fsm->numMsg - 1)) last = 1;
+            else last = 0;
 
-            /* body data pack */
+            pack_iq_rsp_head(fsm, iqLen, last, 1, 0, 1);
 
+            memcpy(fsm->rspMsgBuf+32, &iq_data, fsm->req.segLen);
         }
+
+        print_rsp_msg_buf(fsm);
 
         fsm->state = BUSY;
     }
@@ -414,12 +478,13 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
             {
                 /* data buf msgs 个数 第一次取第一个数据计算获得下边数据 */
                 //fsm->numSeg = ;
+                fsm->numSeg = 1;
                 fsm->segIdx = 0;
 
                 fsm->state = BUSY;
             }
         }
-        else 
+        else
         {
             fsm->segIdx = fsm->sync.segIdx;
             fsm->state = BUSY;
@@ -430,7 +495,7 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
         if(fsm->segIdx == fsm->numSeg || (fsm->segIdx % fsm->req.segBat) == 0)
         {
             fsm->state = PENDING;
-            fsm->alive = 20000; // 10s
+            fsm->alive = 20; // 10s
         }
     }
     else if(fsm->state == PENDING)
@@ -449,7 +514,7 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
     }
     else
     {
-      return -1;
+        return -1;
     }
 
     return 0;
@@ -458,16 +523,19 @@ uint32_t pack_rsp_msg(fsm_t *fsm)
 uint32_t rsp_msg_handler(om_socket_t* oms, fsm_t *fsm)
 {
     uint32_t ret, len;
+    uint16_t id;
 
     ret = pack_rsp_msg(fsm);
     if(0 != ret)
     {
-        printf("Error: pack rsp msg failed.\n");
+        //printf("Error: pack rsp msg failed.\n");
         return -1;
     }
 
 again:
-    len = sendto(oms->listen, fsm->rspMsgBuf, strlen(fsm->rspMsgBuf), 0,
+    memcpy(&id, fsm->rspMsgBuf, 2);
+    printf("send: id=%d.\n", id);
+    len = sendto(oms->listen, fsm->rspMsgBuf, sizeof(fsm->rspMsgBuf), 0,
                  (struct sockaddr*)&oms->cliAddr, sizeof(struct sockaddr_in));
     if(len > 0)
     {
@@ -518,24 +586,23 @@ int main(int argc, char *argv[])
         return -3;
     }
 
-    t1 = cur_time_us();
+    t1 = cur_time_ms();
     while(1)
     {
-        t2 = cur_time_us();
+        t2 = cur_time_ms();
         /* tx */
         if((t2 - t1) > 500)
         {
             t1 = t2;
             if(fsm->state != IDLE)
             {
-                //rsp_msg_handler(oms, fsm);
+                rsp_msg_handler(oms, fsm);
             }
         }
 
         /* rx */
         req_msg_handler(oms, fsm);
 
-        //om_fsm_start(oms);
         //usleep(500000); // 500 ms
     }
 
@@ -543,4 +610,5 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
 

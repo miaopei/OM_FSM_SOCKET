@@ -5,18 +5,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 #include <stdbool.h>
 
 #define MAXDATASIZE 65507
-
-static pthread_t *g_phy_thread = NULL;
-
-typedef enum {
-    OM_QUIT = 100,
-    OM_PHY_LOG_START = 101,
-    OM_MAIN_EXIT = 200
-} messageID;
 
 typedef struct thread_send_info_s {
     int sockfd;
@@ -25,173 +16,7 @@ typedef struct thread_send_info_s {
     char msg[MAXDATASIZE];
 } thread_send_info_t;
 
-static thread_send_info_t thread_send_info; 
-
-typedef struct tlv_head_s {
-    uint8_t head;
-    uint8_t tag;
-} tlv_head_t;
-
-typedef struct tlv_body_phy_s {
-    uint32_t    slice_size;
-    uint16_t    crc;
-    uint32_t    size;
-    char        data[128];
-} tlv_body_phy_t;
-
-typedef struct tlv_info_s {
-    uint8_t     head;
-    uint8_t     tag;
-    uint32_t    slice_size;
-    uint16_t    crc;
-    uint32_t    size;
-} __attribute__((packed)) tlv_info_t;
-
-typedef struct tlv_msg_s {
-    tlv_info_t  tlv_info;
-    char        data[128];
-} __attribute__((packed)) tlv_msg_t;
-
-
-typedef struct tlv_phy_response_s {
-    tlv_head_t  tlv_head;
-    uint16_t    seqence;
-    uint32_t    size;
-    char        *data;
-    uint16_t    crc;
-} tlv_phy_response_t;
-
-
-// crc16
-// https://github.com/lammertb/libcrc/blob/master/src/crc16.c
-#define		CRC_POLY_16		    0xA001
-#define		CRC_START_16		0x0000
-#define		CRC_START_MODBUS	0xFFFF
-
-static bool        crc_tab16_init      = false;
-static uint16_t    crc_tab16[256];
-
-static void init_crc16_tab( void )
-{
-	uint16_t i;
-	uint16_t j;
-	uint16_t crc;
-	uint16_t c;
-
-	for (i=0; i<256; i++) {
-		crc = 0;
-		c   = i;
-
-		for (j=0; j<8; j++) {
-			if ( (crc ^ c) & 0x0001 ) crc = ( crc >> 1 ) ^ CRC_POLY_16;
-			else                      crc =   crc >> 1;
-
-			c = c >> 1;
-		}
-
-		crc_tab16[i] = crc;
-	}
-
-	crc_tab16_init = true;
-}
-
-uint16_t crc_16( const unsigned char *input_str, size_t num_bytes ) 
-{
-	uint16_t crc;
-	const unsigned char *ptr;
-	size_t a;
-
-	if ( ! crc_tab16_init ) init_crc16_tab();
-
-	crc = CRC_START_16;
-	ptr = input_str;
-
-	if ( ptr != NULL ) for (a=0; a<num_bytes; a++) {
-		crc = (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) *ptr++) & 0x00FF ];
-	}
-
-	return crc;
-}
-
-uint16_t crc_modbus( const unsigned char *input_str, size_t num_bytes ) 
-{
-	uint16_t crc;
-	const unsigned char *ptr;
-	size_t a;
-
-	if ( ! crc_tab16_init ) init_crc16_tab();
-
-	crc = CRC_START_MODBUS;
-	ptr = input_str;
-
-	if ( ptr != NULL ) for (a=0; a<num_bytes; a++) {
-		crc = (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) *ptr++) & 0x00FF ];
-	}
-
-	return crc;
-}
-
-uint16_t update_crc_16( uint16_t crc, unsigned char c ) 
-{
-	if ( ! crc_tab16_init ) init_crc16_tab();
-
-	return (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) c) & 0x00FF ];
-}
-
-
-int Usage(const char* proc)
-{
-    printf("Usage:%s[server_ip][server_prot]\n", proc);
-    return 0;
-}
-
-void *recv_phy_log(void *arg)
-{
-    int ret;
-    thread_send_info_t *ts_info = (thread_send_info_t *)arg;
-    char ver_info[MAXDATASIZE] = {0};
-    //int i;
-    uint32_t head, id, seq, size, data;
-
-    while(1)
-    {
-        //memset(&ver_info, 0, sizeof(ver_info));
-        ret = recvfrom(ts_info->sockfd, ver_info, MAXDATASIZE, MSG_DONTWAIT, (struct sockaddr *)&ts_info->cli, &ts_info->len);
-        if(ret > 0)
-        {
-#if 0
-            printf("recvfrom return size [%d].\n", ret);
-            ret = ret / sizeof(uint32_t);
-            for(i = 0; i < ret; i++)
-            {
-                printf("Client recv size(uint32_t)[%d], data[%d][%d].\n", ret, i, ver_info[i]);
-            }
-            printf("\n");
-#endif
-            printf("recvfrom return size [%d].\n", ret);
-            memcpy(&head, ver_info, 4);
-            printf("recv tlv head [%d].\n", head);
-            memcpy(&id, ver_info + 4, 4);
-            printf("recv tlv id [%d].\n", id);
-            memcpy(&seq, ver_info + 8, 4);
-            printf("recv tlv seq [%d].\n", seq);
-            memcpy(&size, ver_info + 12, 4);
-            printf("recv tlv size [%d].\n", size);
-            memcpy(&data, ver_info + 16, 4);
-            printf("recv tlv data [%d].\n", data);
-            printf("\n");
-        }
-
-        if(ret == -1)
-            break;
-        //sleep(1);
-    }
-
-    free(g_phy_thread);
-    g_phy_thread = NULL;
-
-    pthread_exit(NULL);
-}
+static thread_send_info_t thread_send_info;
 
 typedef struct Req_s {
     uint16_t    type;
@@ -246,15 +71,114 @@ typedef struct IQ_rsp_s {
     uint8_t     iqType;     // 0--DL, 1--UL, 2--PRACH
 } __attribute__((packed)) IQ_rsp_t;
 
+int Usage(const char* proc)
+{
+    printf("Usage:%s[server_ip][server_prot]\n", proc);
+    return 0;
+}
+
+void send_handler(thread_send_info_t *ts_info, const char *data, uint32_t len)
+{
+    sendto(ts_info->sockfd, data, len, 0, (struct sockaddr *)&ts_info->cli, ts_info->len);
+}
+
+void recv_process_handler(thread_send_info_t *ts_info)
+{
+    int ret;
+    char ver_info[MAXDATASIZE] = {0};
+    //char data[1024] = {0};
+    uint32_t data_msg;
+    uint16_t id;
+
+    memset(&ver_info, 0x00, sizeof(ver_info));
+    memset(&data_msg, 0x00, sizeof(data_msg));
+
+    ret = recvfrom(ts_info->sockfd, ver_info, MAXDATASIZE, MSG_DONTWAIT, (struct sockaddr *)&ts_info->cli, &ts_info->len);
+    if(ret > 0)
+    {
+        memcpy(&id, ver_info, 2);
+        printf("recvfrom return size=[%d] id=%d.\n", ret, id);
+        if(id == 2000)
+        {
+            CellCfg_rsp_t cellCfg_rsp;
+            memcpy(&cellCfg_rsp, ver_info, sizeof(cellCfg_rsp));
+            printf("Recv msg info: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d numCell=%d numTxAnt=%d numRxAnt=%d}.\n"
+                   , cellCfg_rsp.type
+                   , cellCfg_rsp.msgLen
+                   , cellCfg_rsp.lastMsg
+                   , cellCfg_rsp.numSeg
+                   , cellCfg_rsp.segIdx
+                   , cellCfg_rsp.numCell
+                   , cellCfg_rsp.numTxAnt
+                   , cellCfg_rsp.numRxAnt);
+
+
+            Sync_t sync;
+            sync.type               = 3000;
+            sync.msgLen             = 32;
+            sync.segIdx             = 0;
+            sync.synCode            = 3;
+
+            send_handler(ts_info, (char *)&sync, 32);
+        }
+        else if(id == 2001)
+        {
+            RT_rsp_t rt_rsp;
+            memcpy(&rt_rsp, ver_info, sizeof(rt_rsp));
+            printf("Recv msg info: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d}.\n"
+                   , rt_rsp.type
+                   , rt_rsp.msgLen
+                   , rt_rsp.lastMsg
+                   , rt_rsp.numSeg
+                   , rt_rsp.segIdx);
+
+            //memcpy(data, ver_info + 32, rt_rsp.msgLen - 32);
+            memcpy(&data_msg, ver_info + 32, 2);
+            printf("Recv msg data: %d.\n", data_msg);
+
+            Sync_t sync;
+            sync.type               = 3000;
+            sync.msgLen             = 32;
+            sync.segIdx             = 0;
+            sync.synCode            = 1;
+
+            send_handler(ts_info, (char *)&sync, 32);
+        }
+        else if(id == 2002)
+        {
+            IQ_rsp_t iq_rsp;
+            memcpy(&iq_rsp, ver_info, sizeof(iq_rsp));
+            printf("Recv msg info: {type=%d msgLen=%d lastMsg=%d numSeg=%d segIdx=%d cellId=%d antId=%d iqType=%d}.\n"
+                   , iq_rsp.type
+                   , iq_rsp.msgLen
+                   , iq_rsp.lastMsg
+                   , iq_rsp.numSeg
+                   , iq_rsp.segIdx
+                   , iq_rsp.cellId
+                   , iq_rsp.antId
+                   , iq_rsp.iqType);
+
+            memcpy(&data_msg, ver_info + 32, iq_rsp.msgLen - 32);
+            printf("Recv msg data: %d.\n", data_msg);	
+
+            Sync_t sync;
+            sync.type               = 3000;
+            sync.msgLen             = 32;
+            sync.segIdx             = 0;
+            sync.synCode            = 3;
+
+            send_handler(ts_info, (char *)&sync, 32);
+        }
+    }
+}
 
 int main(int argc, char* argv[])
 {
     int sockfd;
     struct sockaddr_in addr;
 
-    //int err;
     char sendbuf[MAXDATASIZE] = {0};
-    
+
     int msgid = 0;
 
     if(argc != 3)
@@ -277,8 +201,6 @@ int main(int argc, char* argv[])
     //tv_out.tv_usec = 1000; // 1000 微秒
     //setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv_out, sizeof(tv_out));
 
-    socklen_t len = sizeof(addr);
-
     thread_send_info.sockfd = sockfd;
     thread_send_info.cli = addr;
     thread_send_info.len = sizeof(addr);
@@ -290,33 +212,33 @@ int main(int argc, char* argv[])
         fgets(sendbuf, 40, stdin);
         sendbuf[strlen(sendbuf)-1] = '\0';
 
-        //sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&addr, len);
-
         Req_t req;
 
         msgid = atoi(sendbuf);
         switch(msgid)
         {
-            case 1000:
+        case 1000:
             {
                 req.type        = 1000;
                 req.msgLen      = 32;
-                
-                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+
+                //sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                send_handler(&thread_send_info, (char *)&req, 32);
                 break;
             }
-            case 1001:
+        case 1001:
             {
                 req.type        = 1001;
                 req.msgLen      = 32;
                 req.segLen      = 1400;
                 req.segBat      = 3;
-               
-                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+
+                //sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                send_handler(&thread_send_info, (char *)&req, 32);
                 break;
 
             }
-            case 1002:
+        case 1002:
             {
                 req.type        = 1002;
                 req.msgLen      = 32;
@@ -325,86 +247,14 @@ int main(int argc, char* argv[])
                 req.numSlot     = 2;
                 req.cellId      = 1;
 
-                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                //sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                send_handler(&thread_send_info, (char *)&req, 32);
                 break;
             }
         }
 
-#if 0
-        msgid = atoi(sendbuf);
-
-        switch(msgid)
-        {
-            case OM_QUIT:
-            {
-                sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&addr, len);
-                break;
-            }
-            case OM_PHY_LOG_START:
-            {
-                if(g_phy_thread == NULL)
-                {
-                    //int i;
-                    //for(i=0; i<10; i++)
-                    //{
-#if 1
-                        tlv_msg_t *tlv_msg = (tlv_msg_t *)malloc(sizeof(tlv_msg_t));
-                        memset(tlv_msg, 0x00, sizeof(tlv_msg));
-                        tlv_msg->tlv_info.head = 0xFD;
-                        tlv_msg->tlv_info.tag = 101;
-                        tlv_msg->tlv_info.slice_size = 4;
-                        sprintf(tlv_msg->data, "123456789abcdef");
-                        tlv_msg->tlv_info.size = strlen(tlv_msg->data);
-                        //tlv_msg->data[tlv_msg->size+1] = '\0';
-
-                        uint16_t tlv_msg_len = sizeof(tlv_msg->tlv_info) + tlv_msg->tlv_info.size;
-                        tlv_msg->tlv_info.crc = crc_16((unsigned char *)&tlv_msg->data, tlv_msg->tlv_info.size); 
-                        printf("CRC: [%d|%x] len:%d.\n", tlv_msg->tlv_info.crc, tlv_msg->tlv_info.crc, tlv_msg_len);
-                        printf("tlv_msg->tlv_info sizeof [%d] data[%s].\n", sizeof(tlv_msg->tlv_info), tlv_msg->data);
-#endif
-
-                        sendto(sockfd, tlv_msg, tlv_msg_len, 0, (struct sockaddr *)&addr, len);
-                        //sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&addr, len);
-
-                        printf("INT: Create phy_log thread.\n");
-
-                        g_phy_thread = (pthread_t *)malloc(sizeof(pthread_t));
-                        if(!g_phy_thread)
-                        {
-                            printf("Error: can't allocate space for phy thread.\n");
-                            continue;
-                        }
-                        memset(g_phy_thread, 0, sizeof(pthread_t));
-
-                        err = pthread_create(g_phy_thread, NULL, recv_phy_log, (void*)&thread_send_info);
-                        pthread_setname_np(*g_phy_thread, "recv_phy_log");
-                        //pthread_detach(g_phy_start);
-                        if(0 != err)
-                        {
-                            printf("Error: Thread create failed.\n");
-                            free(g_phy_thread);
-                            g_phy_thread = NULL;
-                        }
-
-                        usleep(200000); // um, 200 ms
-
-                        free(tlv_msg);
-                        tlv_msg = NULL;
-                    //}
-                }
-                break;
-            }
-            case OM_MAIN_EXIT:
-            {
-                close(sockfd);
-                return 0;
-            }
-            default:
-            {
-                printf("Error: input commond failed.\n");
-            }
-        }
-#endif
+        recv_process_handler(&thread_send_info);
+        memset(sendbuf, 0x00, sizeof(sendbuf));
     }
 
     close(sockfd);

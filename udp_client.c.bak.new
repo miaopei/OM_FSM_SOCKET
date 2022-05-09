@@ -1,0 +1,233 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+#include <stdbool.h>
+
+#define MAXDATASIZE 65507
+
+static pthread_t *g_phy_thread = NULL;
+
+typedef struct thread_send_info_s {
+    int sockfd;
+    struct sockaddr_in cli;
+    socklen_t len;
+    char msg[MAXDATASIZE];
+} thread_send_info_t;
+
+static thread_send_info_t thread_send_info; 
+
+typedef struct Req_s {
+    uint16_t    type;
+    uint16_t    msgLen;
+    uint16_t    segLen;
+    uint16_t    segBat;
+    uint16_t    numSlot;
+    uint8_t     cellId;
+} __attribute__((packed)) Req_t;
+
+typedef struct Sync_s {
+    uint16_t    type;
+    uint16_t    msgLen;
+    uint32_t    segIdx;
+    uint8_t     synCode;
+} Sync_t;
+
+typedef struct CellCfg_rsp_s {
+    uint16_t    type;
+    uint16_t    msgLen;
+    uint8_t     lastMsg;    // 1--true, 0--false
+    uint16_t    rsv0;       // reserved
+    uint8_t     rsv1;       // reserved
+    uint32_t    numSeg;
+    uint32_t    segIdx;
+    uint8_t     numCell;
+    uint8_t     numTxAnt;
+    uint8_t     numRxAnt;
+    uint8_t     reserved;
+} __attribute__((packed)) CellCfg_rsp_t;
+
+typedef struct RT_rsp_s {
+    uint16_t    type;
+    uint16_t    msgLen;
+    uint8_t     lastMsg;    // 1--true, 0--false
+    uint16_t    rsv0;       // reserved
+    uint8_t     rsv1;       // reserved
+    uint32_t    numSeg;
+    uint32_t    segIdx;
+} __attribute__((packed)) RT_rsp_t;
+
+typedef struct IQ_rsp_s {
+    uint16_t    type;
+    uint16_t    msgLen;
+    uint8_t     lastMsg;    // 1--true, 0--false
+    uint16_t    rsv0;       // reserved
+    uint8_t     rsv1;       // reserved
+    uint32_t    numSeg;
+    uint32_t    segIdx;
+    uint8_t     cellId;
+    uint8_t     antId;
+    uint8_t     iqType;     // 0--DL, 1--UL, 2--PRACH
+} __attribute__((packed)) IQ_rsp_t;
+
+int Usage(const char* proc)
+{
+    printf("Usage:%s[server_ip][server_prot]\n", proc);
+    return 0;
+}
+
+void *recv_phy_log(void *arg)
+{
+    int ret;
+    thread_send_info_t *ts_info = (thread_send_info_t *)arg;
+    char ver_info[MAXDATASIZE] = {0};
+    uint16_t id;
+
+    while(1)
+    {
+        //memset(&ver_info, 0, sizeof(ver_info));
+        ret = recvfrom(ts_info->sockfd, ver_info, MAXDATASIZE, MSG_DONTWAIT, (struct sockaddr *)&ts_info->cli, &ts_info->len);
+        if(ret > 0)
+        {
+            memcpy(&id, ver_info, 2);
+            printf("recvfrom return size=[%d] id=%d.\n", ret, id);
+            if(id == 2000)
+            {
+                   
+            }
+            else if(id == 2001)
+            {
+                
+            }
+            else if(id == 2002)
+            {
+
+            }
+        }
+
+        if(ret == -1)
+            break;
+        //sleep(1);
+    }
+
+    free(g_phy_thread);
+    g_phy_thread = NULL;
+
+    pthread_exit(NULL);
+}
+
+
+int main(int argc, char* argv[])
+{
+    int sockfd;
+    struct sockaddr_in addr;
+
+    int err;
+    char sendbuf[MAXDATASIZE] = {0};
+    
+    int msgid = 0;
+
+    if(argc != 3)
+    {
+        Usage(argv[0]);
+        return 1;
+    }
+
+    if((sockfd = socket(AF_INET,SOCK_DGRAM,0)) == -1)
+    {
+        printf("Createing socket failed.\n");
+    }
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(atoi(argv[2]));
+    addr.sin_addr.s_addr = inet_addr(argv[1]);
+
+    //struct timeval tv_out;
+    //tv_out.tv_sec = 3; // wait 3s
+    //tv_out.tv_usec = 1000; // 1000 微秒
+    //setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv_out, sizeof(tv_out));
+
+    socklen_t len = sizeof(addr);
+
+    thread_send_info.sockfd = sockfd;
+    thread_send_info.cli = addr;
+    thread_send_info.len = sizeof(addr);
+
+    while(1)
+    {
+        //printf("input usage: \n\tquit[100] \n\tphy_log_start[101] \n\texit[200] \ninput message: ");
+        printf("\ninput message: ");
+        fgets(sendbuf, 40, stdin);
+        sendbuf[strlen(sendbuf)-1] = '\0';
+
+        //sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&addr, len);
+
+        Req_t req;
+
+        msgid = atoi(sendbuf);
+        switch(msgid)
+        {
+            case 1000:
+            {
+                req.type        = 1000;
+                req.msgLen      = 32;
+                
+                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                break;
+            }
+            case 1001:
+            {
+                req.type        = 1001;
+                req.msgLen      = 32;
+                req.segLen      = 1400;
+                req.segBat      = 3;
+               
+                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                break;
+
+            }
+            case 1002:
+            {
+                req.type        = 1002;
+                req.msgLen      = 32;
+                req.segLen      = 1400;
+                req.segBat      = 3;
+                req.numSlot     = 2;
+                req.cellId      = 1;
+
+                sendto(sockfd, &req, sizeof(req), 0, (struct sockaddr *)&addr, len);
+                break;
+            }
+        }
+
+        if(g_phy_thread == NULL)
+        {
+            g_phy_thread = (pthread_t *)malloc(sizeof(pthread_t));
+            if(!g_phy_thread)
+            {
+                printf("Error: can't allocate space for phy thread.\n");
+                continue;
+            }
+            memset(g_phy_thread, 0, sizeof(pthread_t));
+
+            err = pthread_create(g_phy_thread, NULL, recv_phy_log, (void*)&thread_send_info);
+            pthread_setname_np(*g_phy_thread, "recv_phy_log");
+            pthread_detach(*g_phy_thread);
+            if(0 != err)
+            {
+                printf("Error: Thread create failed.\n");
+                free(g_phy_thread);
+                g_phy_thread = NULL;
+            }
+        }
+    }
+
+    close(sockfd);
+
+    return 0;
+}
+
